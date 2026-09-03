@@ -1,0 +1,52 @@
+name: Build and Update Manifests
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Application Repo
+        uses: actions/checkout@v4
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push Frontend Image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ github.sha }} ./frontend
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ github.sha }}
+
+      - name: Build and Push Backend Image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/backend:${{ github.sha }} ./backend
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/backend:${{ github.sha }}
+
+      - name: Checkout Manifests Repo
+        uses: actions/checkout@v4
+        with:
+          repository: 'Chetna-Bhatia/devops-k8s-manifests'
+          token: ${{ secrets.GH_PAT }}
+          path: manifests-repo
+
+      - name: Update Image Tags in Manifests
+        run: |
+          cd manifests-repo
+
+          sed -i "s|image: .*frontend:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ github.sha }}|g" frontend-deployment.yaml
+          sed -i "s|image: .*backend:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/backend:${{ github.sha }}|g" backend-deployment.yaml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .
+          git commit -m "Update image tags to SHA ${{ github.sha }}" || exit 0
+          git push
